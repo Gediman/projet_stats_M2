@@ -1,0 +1,77 @@
+---
+title: "Projet de stats"
+author: "Jul"
+output: html_document
+---
+
+##Introduction
+
+Dans ce projet on se propose d'étudier une méthode permettant d'analyser deux variables et le rapport qu'elles entretiennent entre elles. Il s'agirait de savoir la relation, si il y en a une, entre le nombre de personnes fumant quotidiennement dans un pays (en % tout âge et sexe confondus), et le nombre de personnes ayant un cancer (en % tout âge et sexe confondus).
+
+Les données sont ci dessous filtrées afin de ne conserver que l'année 1992 : nous ne ferons pas d'analyse temporelle dans cette étude qui bruiterait nos données. La méthode que nous emploieront est ainsi destinée à pouvoir être répliqué sur les années à venir par exemple - celle que nous choississons n'a donc que peu d'importance.
+ 
+```{r}
+
+cigarette <- read.csv(file="daily-smoking-prevalence-bounds.csv", sep= ','); 
+cancer <- read.csv(file="share-of-population-with-cancer.csv", sep= ','); 
+cigarette <-  dplyr::filter(cigarette, Year=="1992")
+cancer <-  dplyr::filter(cancer, Year=="1992")
+cancer$Year <- NULL
+cancer$Entity <- NULL
+cigarette$Year <- NULL
+cigarette$Upper.bound.... <-NULL
+cigarette$Lower.bound.... <- NULL
+data = merge(cigarette, cancer, by="Code")
+head(data)
+```
+
+Les deux variables que l'on va étudier sont des variables quantitatives. On peut donc les étudier via une regression linéaire avec en variable dépendante les neoplasmes, et en variable explicative la cigarette.
+
+##Représentation des données
+
+Regardons ces données un peu plus attentivement.
+```{r}
+summary(data$Neoplasms)
+summary(data$Smoking)
+```
+
+Nos deux jeux de données sont en pourcentage, donc compris entre 0 et 100%. Or on peut voir qu'elles ne sont pas reparties de la même façon. En effet, le pourcentage de cancers dans la population varie entre 0,09% et 1,61% (donc très bas), et sur un ensemble très restreint - d'autant plus on peut voir grâce au troisième quartile que la majeure partie des valeurs reste concentrée en dessous de 0,58% (assez proche de la moyenne).
+Le pourcentage de fumeurs, lui, varie sur un écart plus grand : de 3% à 49% pour les extremums. La moyenne et la médiane étant de 19% on sait donc que les données sont réparties autour de cette valeur. 
+
+```{r}
+ggplot2::ggplot(data,
+                ggplot2::aes(x=Neoplasms)) +
+  ggplot2::geom_histogram(binwidth = 0.05, colour="black", fill="lightgrey")
+ggplot2::ggplot(data,
+                ggplot2::aes(x=Smoking)) +
+  ggplot2::geom_histogram(binwidth = 3, colour="black", fill="lightgrey")
+```
+
+La distribution des données est non-normale. Pour les cancers, elle est asymétrique, même si centrée autour d'un pic à 0.2% où se concentre les pays avant de décroître.
+Pour le pourcentage de fumeurs, elle est plus irrégulière : avec un pic sur les payx à 10% de fumeurs, et un autre sur le pays autour de 25~30% de fumeurs.
+Cela rend à priori un modèle linéraire Gaussien inapproprié. Il va donc falloir analyser les limites que peuvent poser ce modèle par la suite.
+
+##Application du modèle
+
+Posons notre hypothèse H0 : Le nombre (pourcentage) de fumeurs dans un pays va augmenter le nombre (pourcentage) de personnes ayant un cancer parmi la population.
+On a donc notre hypothèse H1 : il n'y pas d'influence du nombre de fumeurs sur le nombre de cancer.
+
+```{r}
+plot(data$Smoking, data$Neoplasms,    
+        main="Distribution of neoplasms depending of smoking")
+
+```
+
+Si on regarde la représentation graphique de nos données les unes par rapport aux autres, la relation - linéaire en tout cas - n'est pas évidente. On note la présence de quelques outliers (comme le pays à 50% de fumeurs pour 0.1% de cancer dans la population).
+
+```{r}
+coef(lm(formula = data$Smoking ~ data$Neoplasms))
+```
+##Coefficient de corrélation linéaire
+```{r}
+cor(data$Smoking, data$Neoplasms)
+```
+Le coefficient de corrélation linéaire nous indique si nos données sont correllées.
+
+Plus le coefficient est proche des valeurs extrêmes -1 et 1, plus la corrélation entre les variables est forte […]. Une corrélation égale à 0 signifie que les variables ne sont pas corrélées.
+
