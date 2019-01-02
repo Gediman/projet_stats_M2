@@ -4,6 +4,15 @@ author: "Jul"
 output: html_document
 ---
 
+```{r}
+library(broom)
+library(purrr)
+library(dplyr)
+library(tidyr)
+
+source("functions.R")
+```
+
 ##Introduction
 
 Dans ce projet on se propose d'étudier une méthode permettant d'analyser deux variables et le rapport qu'elles entretiennent entre elles. Il s'agirait de savoir la relation, si il y en a une, entre le nombre de personnes fumant quotidiennement dans un pays (en % tout âge et sexe confondus), et le nombre de personnes ayant un cancer (en % tout âge et sexe confondus).
@@ -12,16 +21,16 @@ Les données sont ci dessous filtrées afin de ne conserver que l'année 1992 : 
  
 ```{r}
 
-cigarette <- read.csv(file="daily-smoking-prevalence-bounds.csv", sep= ','); 
-cancer <- read.csv(file="share-of-population-with-cancer.csv", sep= ','); 
-cigarette <-  dplyr::filter(cigarette, Year=="1992")
-cancer <-  dplyr::filter(cancer, Year=="1992")
+cigarette <- read.csv(file = "daily-smoking-prevalence-bounds.csv", sep = ",")
+cancer <- read.csv(file = "share-of-population-with-cancer.csv", sep = ",")
+cigarette <- dplyr::filter(cigarette, Year == "1992")
+cancer <- dplyr::filter(cancer, Year == "1992")
 cancer$Year <- NULL
 cancer$Entity <- NULL
 cigarette$Year <- NULL
-cigarette$Upper.bound.... <-NULL
+cigarette$Upper.bound.... <- NULL
 cigarette$Lower.bound.... <- NULL
-data = merge(cigarette, cancer, by="Code")
+data <- merge(cigarette, cancer, by = "Code")
 head(data)
 ```
 
@@ -39,39 +48,97 @@ Nos deux jeux de données sont en pourcentage, donc compris entre 0 et 100%. Or 
 Le pourcentage de fumeurs, lui, varie sur un écart plus grand : de 3% à 49% pour les extremums. La moyenne et la médiane étant de 19% on sait donc que les données sont réparties autour de cette valeur. 
 
 ```{r}
-ggplot2::ggplot(data,
-                ggplot2::aes(x=Neoplasms)) +
-  ggplot2::geom_histogram(binwidth = 0.05, colour="black", fill="lightgrey")
-ggplot2::ggplot(data,
-                ggplot2::aes(x=Smoking)) +
-  ggplot2::geom_histogram(binwidth = 3, colour="black", fill="lightgrey")
+ggplot2::ggplot(
+  data,
+  ggplot2::aes(x = Neoplasms)
+) +
+  ggplot2::geom_histogram(binwidth = 0.05, colour = "black", fill = "lightgrey")
+ggplot2::ggplot(
+  data,
+  ggplot2::aes(x = Smoking)
+) +
+  ggplot2::geom_histogram(binwidth = 3, colour = "black", fill = "lightgrey")
 ```
 
-La distribution des données est non-normale. Pour les cancers, elle est asymétrique, même si centrée autour d'un pic à 0.2% où se concentre les pays avant de décroître.
+La distribution des données pour les cancers est asymétrique, même si centrée autour d'un pic à 0.2% où se concentre les pays avant de décroître.
 Pour le pourcentage de fumeurs, elle est plus irrégulière : avec un pic sur les payx à 10% de fumeurs, et un autre sur le pays autour de 25~30% de fumeurs.
-Cela rend à priori un modèle linéraire Gaussien inapproprié. Il va donc falloir analyser les limites que peuvent poser ce modèle par la suite.
+
+La distribution des données est non-normale, ce qui rend à priori un modèle linéraire Gaussien inapproprié (en fait, la non-normalité de la distribution de la variable indépendante, à savoir, les fumeurs). Il va donc falloir analyser les limites que peuvent poser ce modèle par la suite.
 
 ##Application du modèle
 
-Posons notre hypothèse H0 : Le nombre (pourcentage) de fumeurs dans un pays va augmenter le nombre (pourcentage) de personnes ayant un cancer parmi la population.
-On a donc notre hypothèse H1 : il n'y pas d'influence du nombre de fumeurs sur le nombre de cancer.
+Posons notre hypothèse H1 : Le nombre (pourcentage) de fumeurs dans un pays va augmenter le nombre (pourcentage) de personnes ayant un cancer parmi la population.
+On a donc notre hypothèse H0 : il n'y pas d'influence du nombre de fumeurs sur le nombre de cancer.
 
 ```{r}
-plot(data$Smoking, data$Neoplasms,    
-        main="Distribution of neoplasms depending of smoking")
-
+plot(data$Smoking, data$Neoplasms,
+  main = "Distribution of neoplasms depending of smoking"
+)
 ```
 
-Si on regarde la représentation graphique de nos données les unes par rapport aux autres, la relation - linéaire en tout cas - n'est pas évidente. On note la présence de quelques outliers (comme le pays à 50% de fumeurs pour 0.1% de cancer dans la population).
+Si on regarde la représentation graphique de nos données les unes par rapport aux autres, la relation - linéaire en tout cas - n'est pas évidente. On note également la présence de quelques outliers (comme le pays à 50% de fumeurs pour 0.1% de cancer dans la population). 
 
 ```{r}
-coef(lm(formula = data$Smoking ~ data$Neoplasms))
+cor(data$Neoplasms, data$Smoking, method = "pearson")
 ```
-##Coefficient de corrélation linéaire
+
+La correlation mesure le degré de dépendance linéaire entre deux variables.
+
+Le coefficient de corrélation de Pearson nous renvoie ici une mesure de 0.44. Ce coefficient est compris entre -1 et 1. Si il est positif, ce qui est le cas ici, on a une correlation positive : si notre variable indépendante augmente, alors notre variable dépendante augmente aussi. Plus il s'approche de 0 et moins nos variables sont correlées. Néanmoins, on ne peut pas en dire plus pour le moment.
+
 ```{r}
-cor(data$Smoking, data$Neoplasms)
+linear <- lm(formula = data$Neoplasms ~ data$Smoking)
+summary(linear)
 ```
-Le coefficient de corrélation linéaire nous indique si nos données sont correllées.
 
-Plus le coefficient est proche des valeurs extrêmes -1 et 1, plus la corrélation entre les variables est forte […]. Une corrélation égale à 0 signifie que les variables ne sont pas corrélées.
 
+L'intercept correspond à l'ordonnée à l'origine de notre modèle. Notre premier beta fait varier notre variable indépendante. Notre modèle correspond donc schématiquement à :
+cancer = 0.015 *(fumeurs)+ 0.1453
+
+On a donc notre modèle. Mais est-il statistiquement pertinent ?
+Le résumé nous donne accès à deux p-values - l'une concernant nos variables indépendantes, l'autre concernant notre modèle. Comme nous n'avons qu'une variable indépendante ces deux p-values ne font qu'une. On se sert traditionnellement du seuil 0.05 à ne pas dépasser pour s'assurer de sa pertinence. Notre p-value étant extrêment basse, notre modèle est fiable. En d'autres termes, on valide notre hypothèse 1 sur l'influence du nombre de fumeurs sur le nombre de cancer. Encore en d'autres termes, le coefficient beta de notre modèle multipliant la variable des fumeurs n'est pas nulle.
+
+##Evalutation du modèle : Power analysis
+
+Afin d'évaluer notre modèle, nous allons effectuer une power analysis. Plus haut, nous avions fait l'hypothèse que notre variable indépendante suivait une distribution normale. Pour tester notre modèle, nous allons simuler de nouvelles données grâce aux valeurs de notre modèle, et toujours suivant cette hypothèse.
+
+```{r}
+# On crée une table contenant les paramètres de notre modèle
+
+# Ici, on test le paramètre de la taille de l'échantillon
+n_param <- data.frame(
+  slope = linear$coefficients[2],
+  intercept = linear$coefficients[1],
+  sigma = glance(linear)[3],
+  n = 10:500
+)
+
+pow_n <- power_analysis(n_param)
+
+
+plot(pow_n$n, pow_n$power)
+```
+
+Même si ce graphe n'est pas très clair, on peut néanmoins en conclure que dès 30 entités - pays dans notre cas - notre hypothèse peut être vérifiée du point de vue de l'échantillon avec une certaine confiance. En d'autres termes, notre modèle ne validera pas notre hypothèse par erreur à cause d'un échantillon trop petit (même si ça ne veut pas dire que notre modèle est correct pour autant.)
+
+```{r}
+# On peut aussi faire varier la déviation en plus
+sigma_param <- data.frame(
+  slope = linear$coefficients[2],
+  intercept = linear$coefficients[1],
+  sigma = seq(from = 0.05, to = 0.65, by = 0.10)
+) %>%
+  crossing(n = 1:length(data$Neoplasms))
+
+pow_sig <- power_analysis(sigma_param)
+
+
+plot(pow_sig$n, pow_sig$power)
+```
+
+
+##Conclusion
+
+On a donc étudié le lien de corrélation entre deux valeurs. A travers les différentes méthodes utilisées, on peut faire plusieurs remarques. Il est vrai que l'on a trouvé un lien entre le pourcentage de fumeurs dans une population et le nombre de personnes ayant un cancer. Mais ce lien c'est pas si prononcé, et cela tient au choix de nos données et de notre hypothèse. En effet, si on avait voulu vérifier notre hypothèse de dépendance de variables, il aurait fallu prendre des données plus "pures" où seul le facteur étudié varie (par exemple, des populations issues de même pays et classes socio-économiques où la seule différence serait de fumer ou non - et s'assurer d'avoir la même "méthodologie" dans le recensement des cancers (et des fumeurs)). Pourtant, on a tout de même réussi à trouver un coefficient de corrélation entre nos données, même si il n'est pas si élevé. 
+Ensuite, une hypothèse de normalité sur le prédicteur suffit à créer un modèle linéaire qui par la suite ne sera pas remis en cause ni par la p-value, ni par une power analysis : ce qui donne un modèle qui pourrait prédire, et servir pour les années suivantes par exemple - ce qui n'est pas forcément le cas. 
+D'où l'intérêt d'être extrêmement précautionneux dans la façon de récolter ses données dans un premier temps, avec le moins de parasitage possible, puis d'y rester fidèle le plus possible par la suite afin d'adapter l'analyse aux données le mieux possible et non pas l'inverse.
